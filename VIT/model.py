@@ -121,13 +121,13 @@ class MultiHeadAttention(nn.Module):
         if d_model != self.d_model:
             raise ValueError(f'Input embedding dimension {d_model} should match layer embedding dimension {self.d_model}')
         
-        qkv = self.qkv(x) # (batch_size, n_patches + 1, 3 * d_model)
+        qkv = self.qkv(x)   # (batch_size, n_patches + 1, 3 * d_model)
         qkv = qkv.reshape(
             batch_size, n_tokens, 3, self.n_heads, self.head_dim
-            ) # (batch_size, n_patches + 1, 3, n_heads, head_dim)
+            )               # (batch_size, n_patches + 1, 3, n_heads, head_dim)
         qkv = qkv.permute(
             2, 0, 3, 1, 4
-            ) # (3, batch_size, n_heads, n_patches + 1, head_dim)
+            )               # (3, batch_size, n_heads, n_patches + 1, head_dim)
         q, k, v = qkv[0], qkv[1], qkv[2]
         
         k_t = k.transpose(-2, -1)   # (batch_size, n_heads, head_dim, n_patches + 1)
@@ -135,7 +135,7 @@ class MultiHeadAttention(nn.Module):
         attn = dp.softmax(dim=-1)   # (batch_size, n_heads, n_patches + 1, n_patches + 1)
         attn = self.attn_drop(attn)
         
-        weighted_avg = attn @ v # (batch_size, n_heads, n_patches + 1, head_dim)
+        weighted_avg = attn @ v                     # (batch_size, n_heads, n_patches + 1, head_dim)
         weighted_avg = weighted_avg.transpose(1, 2) # (batch_size, n_patches + 1, n_heads, head_dim)
         weighted_avg = weighted_avg.flatten(2)      # (batch_size, n_patches + 1, d_model)
         
@@ -143,6 +143,64 @@ class MultiHeadAttention(nn.Module):
         x = self.proj_drop(x)       # (batch_size, n_patches + 1, d_model)
         
         return x
+
+class FeedForward(nn.Module):
+    """ Multi-layer perceptron. 
+    
+    Parameters
+    ----------------
+    in_features: int
+        The number of input features.
+        
+    hidden_features: int
+        The number of features in the hidden layer.
+        
+    out_features: int
+        The number of output features.
+    
+    p: float
+        Dropout probability.
+    
+    Attributes
+    ----------------
+    fc : nn.Linear
+        The first linear layer. 
+    act: nn.GELU
+        GELU activation function.
+    fc2: nn.Linear
+        The second linear layer.
+    """	
+    
+    def __init__(self, in_features, hidden_features=None, out_features=None, p=0.):
+        super().__init__()
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = nn.GELU()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(p)   
+        
+    def forward(self, x):
+        """ Run forward pass.
+        
+        Parameters
+        ----------------
+        x: torch.Tensor
+            Shape '(batch_size, n_patches + 1, in_features)'.
+        
+        Returns
+        ----------------
+        torch.Tensor
+            Shape '(batch_size, n_patches + 1, out_features)'.
+        """
+        
+        x = self.fc1(x)  # (batch_size, n_patches + 1, hidden_features)
+        x = self.act(x)  # (batch_size, n_patches + 1, hidden_features)
+        x = self.drop(x) # (batch_size, n_patches + 1, hidden_features)
+        x = self.fc2(x)  # (batch_size, n_patches + 1, hidden_features)
+        x = self.drop(x) # (batch_size, n_patches + 1, hidden_features)
+        
+        return x
+
+
         
         
         
