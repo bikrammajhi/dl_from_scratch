@@ -44,7 +44,7 @@ class SiglipVisionEmbeddings(nn.Module):
             out_channels=self.embed_dim,
             kernel_size=self.patch_size,        # Each 16x16 pixels will map to a single pixel in feature map
             stride=self.patch_size,
-            padding='valid', # No padding is added
+            padding='valid',                    # No padding is added
         )
 
         self.num_patches = (self.image_size/self.patch_size) ** 2
@@ -182,6 +182,7 @@ class SiglipEncoderLayer(nn.Module):
         hidden_states = self.self_attn(hidden_states = hidden_states)
         # [Batch_size, Num_Patches, Embed_Dim]
         hidden_states = residual + hidden_states
+        
         # [Batch_size, Num_Patches, Embed_Dim]
         residual = hidden_states
         # [Batch_size, Num_Patches, Embed_Dim] -> [Batch_size, Num_Patches, Embed_Dim]
@@ -203,7 +204,16 @@ class SiglipEncoder(nn.Module):
         self.layers = nn.ModuleList(
             [SiglipEncoderLayer(config) for _ in range(config.num_hidden_layers)]
         )
-
+    
+    def forward(self, input_embeds: torch.Tensor)-> torch.Tensor:
+        # inputs_embeds: [Batch_Size, Num_Patches, Embed_Dim]
+        hidden_states = input_embeds
+        
+        for encoder_layer in self.layers:
+            # [Batch_Size, Num_Patches, Embed_Dim] -> [Batch_Size, Num_Patches, Embed_Dim]
+            hidden_states = encoder_layer(hidden_states)
+        return hidden_states
+  
 class SiglipVisionTransformer(nn.Module):
     def __init__(self, config: SiglipVisionConfig):
         super().__init__()
