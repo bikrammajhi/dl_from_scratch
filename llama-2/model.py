@@ -112,7 +112,7 @@ class SelfAttention(nn.Module):
         
         # (B, 1, H_Q * Head_Dim) -> (B, 1, H_Q, Head_Dim)
         xq = xq.view(batch_size, seq_len, self.n_heads_q, self.head_dim)
-        # (B, 1, H_Q * Head_Dim) -> (B, 1, H_KV, Head_Dim)
+        # (B, 1, H_KV * Head_Dim) -> (B, 1, H_KV, Head_Dim)
         xk = xk.view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
         xv = xv.view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
         
@@ -145,12 +145,29 @@ class SelfAttention(nn.Module):
         # (B, H_Q, 1, Seq_Len) @ (B, H_Q, Seq_Len_KV, Head_Dim) -> (B, H_Q, 1, Head_Dim)
         output = torch.matmul(scores, values)
         
-        output = (output.transpose(1,2).contiguous().view(*x))
+        output = (output.transpose(1,2).contiguous().view(*x.shape))
         return self.wo(output)  # (B, 1, Dim) -> (B, 1, Dim)
         
+class FeedForward(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        hidden_dim = 4 * args.dim
+        hidden_dim = int(2 * hidden_dim / 3)
+        if args.ffn_dim_multiplier is not None:
+            hidden_dim = int(args.ffn_dim_multiplier * hidden_dim)
+        # Round the hidden dim to the nearest multiplier of the multiple_of parameter
+        hidden = args.multiple_of * ((hidden_dim + args.multiple_of - 1) // args.multiple_of)
         
-        
-        
+        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
+        self.w3 = nn.Linear(args.dim, hidden, bias=False)
+    def forward(self, x: torch.Tensor):
+        swish = F.silu(self.w1(x))
+        x_V = self.w3(x)
+        x = swish * x_V
+        x = self.w2(x)
+        return x
+    
 class EncoderBlock(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -185,7 +202,7 @@ class Transformer(nn.Module):
         
         self.layers = nn.ModuleList()
         for _ in range(args.n_layers):
-            self.layers.append(EncoderBlocks(args))
+            self.layers.append(EncoderBlock(args))
             
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.output = nn.Linear(args.dim, self.vocab_size, bias=False)
